@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Distributed System Saga",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

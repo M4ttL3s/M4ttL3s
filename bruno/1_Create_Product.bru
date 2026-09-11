@@ -1,0 +1,18 @@
+meta {
+  name: Create Product
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://localhost:8081/products
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "productId": "88888888-8888-8888-8888-888888888888",
+    "initialStock": 100
+  }
+}

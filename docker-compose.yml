@@ -1,0 +1,139 @@
+# ============================================================================
+#  Docker Compose — Distributed System Infrastructure
+#  Services: PostgreSQL 16 (order_db + inventory_db) · RabbitMQ 3 Management
+# ============================================================================
+
+services:
+
+  # --------------------------------------------------------------------------
+  #  PostgreSQL 16 — Base de datos relacional
+  #  Crea DOS bases de datos lógicas aisladas mediante script de inicialización
+  #  inyectado con la directiva 'configs' (sin archivos externos).
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: distributed-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: s3cur3_p4ssw0rd
+      POSTGRES_DB: postgres                       # DB por defecto del engine
+      PGDATA: /var/lib/postgresql/data/pgdata      # Ruta explícita de datos
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    configs:
+      - source: init_databases
+        target: /docker-entrypoint-initdb.d/01-create-databases.sh
+        mode: 0755
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------------
+  #  RabbitMQ 3 — Message Broker con interfaz de gestión
+  #  AMQP  → localhost:5672
+  #  UI    → http://localhost:15672
+  # --------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: distributed-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: r4bb1t_s3cr3t
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - backend
+    restart: unless-stopped
+
+# ===========================================================================
+#  Volúmenes persistentes
+# ===========================================================================
+volumes:
+  postgres_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+# ===========================================================================
+#  Red interna
+# ===========================================================================
+networks:
+  backend:
+    driver: bridge
+
+# ===========================================================================
+#  Config inline — Script de inicialización de PostgreSQL
+#  Se ejecuta UNA SOLA VEZ en el primer arranque del contenedor.
+#  Crea las bases de datos order_db e inventory_db totalmente aisladas,
+#  y otorga privilegios completos sobre el schema public (requerido en PG 15+).
+# ===========================================================================
+configs:
+  init_databases:
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      echo "========================================================"
+      echo " Inicializando bases de datos: order_db · inventory_db"
+      echo "========================================================"
+
+      psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" <<-EOSQL
+
+        -- -------------------------------------------------------
+        --  Crear bases de datos aisladas para cada microservicio
+        -- -------------------------------------------------------
+        CREATE DATABASE order_db
+          OWNER     = $$POSTGRES_USER
+          ENCODING  = 'UTF8'
+          LC_COLLATE = 'en_US.utf8'
+          LC_CTYPE   = 'en_US.utf8';
+
+        CREATE DATABASE inventory_db
+          OWNER     = $$POSTGRES_USER
+          ENCODING  = 'UTF8'
+          LC_COLLATE = 'en_US.utf8'
+          LC_CTYPE   = 'en_US.utf8';
+
+        -- -------------------------------------------------------
+        --  Revocar acceso público por defecto (seguridad)
+        -- -------------------------------------------------------
+        REVOKE ALL ON DATABASE order_db     FROM PUBLIC;
+        REVOKE ALL ON DATABASE inventory_db FROM PUBLIC;
+
+        -- -------------------------------------------------------
+        --  Otorgar privilegios completos al usuario admin
+        -- -------------------------------------------------------
+        GRANT ALL PRIVILEGES ON DATABASE order_db     TO $$POSTGRES_USER;
+        GRANT ALL PRIVILEGES ON DATABASE inventory_db TO $$POSTGRES_USER;
+      EOSQL
+
+      # -----------------------------------------------------------
+      #  En PostgreSQL 15+ es necesario otorgar CREATE en el
+      #  schema public de cada base de datos explícitamente.
+      # -----------------------------------------------------------
+      for db in order_db inventory_db; do
+        psql -v ON_ERROR_STOP=1 --username "$$POSTGRES_USER" --dbname "$$db" <<-EOSQL
+          GRANT ALL ON SCHEMA public TO $$POSTGRES_USER;
+        EOSQL
+      done
+
+      echo "========================================================"
+      echo " ✅ Bases de datos creadas exitosamente"
+      echo "========================================================"

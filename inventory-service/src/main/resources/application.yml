@@ -1,0 +1,52 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/inventory_db
+    username: admin
+    password: s3cur3_p4ssw0rd
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: r4bb1t_s3cr3t
+    listener:
+      simple:
+        default-requeue-rejected: false # Envia directamente al DLX ante fallo recurrente
+        retry:
+          enabled: true
+          initial-interval: 1000ms
+          max-attempts: 3
+          multiplier: 2.0
+
+inventory:
+  rabbitmq:
+    exchange: saga.exchange
+    order-created-queue: inventory.order-created.queue
+    order-cancelled-queue: inventory.order-cancelled.queue
+    routing-key-reserved: inventory.stock.reserved
+    routing-key-rejected: inventory.stock.rejected
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"

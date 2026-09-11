@@ -1,0 +1,28 @@
+meta {
+  name: Create Order
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8080/orders
+  body: json
+  auth: none
+}
+
+headers {
+  Idempotency-Key: my-idem-key-001
+}
+
+body:json {
+  {
+    "customerId": "user-123",
+    "items": [
+      {
+        "productId": "88888888-8888-8888-8888-888888888888",
+        "quantity": 10,
+        "unitPrice": 50.0
+      }
+    ]
+  }
+}
